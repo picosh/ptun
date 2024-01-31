@@ -2,7 +2,7 @@ module github.com/picosh/ptun
 
 go 1.21.6
 
-require golang.org/x/crypto v0.18.0 // indirect
+require golang.org/x/crypto v0.18.0
 
 require (
 	github.com/charmbracelet/ssh v0.0.0-20240130183930-33d2a30e8568
