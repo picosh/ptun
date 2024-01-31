@@ -1,0 +1,8 @@
+*.swp
+*.log
+.DS_Store
+build/*
+!build/!.gitkeep
+ssh_data
+__debug_bin
+.bin
