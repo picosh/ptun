@@ -1,0 +1,10 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - 2222:2222
+      - 8080:8080
+  registry:
+    image: registry
