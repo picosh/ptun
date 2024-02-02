@@ -16,8 +16,8 @@ Sometimes all you have is an ssh keypair for authenticating a user and don't
 want to require them to create a completely separate auth mechanism for website
 access.
 
-For example, have you ever wished you could use docker using just an SSH
-keypair? Well now it's possible.
+For example, have you ever wished you could use `docker push` and `docker pull`
+using just an SSH keypair? Well now it's possible.
 
 # Development
 
