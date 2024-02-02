@@ -8,3 +8,5 @@ services:
       - 8080:8080
   registry:
     image: registry
+    volumes:
+      - ./data/registry:/var/lib/registry
