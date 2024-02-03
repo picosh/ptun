@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -22,6 +20,7 @@ import (
 
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
+	"github.com/picosh/pico/db"
 	"github.com/picosh/ptun"
 )
 
@@ -68,36 +67,62 @@ func (ctx fakeContext) Deadline() (time.Time, bool) {
 	return time.Time{}, false
 }
 
-func checkAuthenticationKeyRequest(authUrl string, authKey string, addr net.Addr, user string) (bool, error) {
+type ctxUserKey struct{}
+
+func getUserCtx(ctx ssh.Context) (*db.User, error) {
+	user := ctx.Value(ctxUserKey{}).(*db.User)
+	if user == nil {
+		return user, fmt.Errorf("user not set on `ssh.Context()` for connection")
+	}
+	return user, nil
+}
+func setUserCtx(ctx ssh.Context, user *db.User) {
+	ctx.SetValue(ctxUserKey{}, user)
+}
+
+func checkAuthenticationKeyRequest(authUrl, authToken, authKey, username string, addr net.Addr) (*db.User, error) {
+	var user *db.User
 	parsedUrl, err := url.ParseRequestURI(authUrl)
 	if err != nil {
-		return false, fmt.Errorf("error parsing url %s", err)
+		return nil, fmt.Errorf("error parsing url %s", err)
 	}
 
 	urlS := parsedUrl.String()
 	reqBodyMap := map[string]string{
 		"auth_key":    string(authKey),
 		"remote_addr": addr.String(),
-		"user":        user,
+		"user":        username,
 	}
 	reqBody, err := json.Marshal(reqBodyMap)
 	if err != nil {
-		return false, fmt.Errorf("error jsonifying request body")
+		return nil, fmt.Errorf("error jsonifying request body")
 	}
-	res, err := http.Post(urlS, "application/json", bytes.NewBuffer(reqBody))
+	req, err := http.NewRequest("POST", urlS, bytes.NewBuffer(reqBody))
+	req.Header.Add("Authorization", authToken)
+	req.Header.Add("Content-Type", "application/json")
+
+	client := &http.Client{}
+	res, err := client.Do(req)
 	if err != nil {
-		return false, err
+		log.Printf("Error auth service: %s with status %d: %s", urlS, res.StatusCode, err.Error())
+		return nil, nil
 	}
+	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK {
 		log.Printf("Public key rejected by auth service: %s with status %d", urlS, res.StatusCode)
-		return false, nil
+		return nil, nil
 	}
 
-	return true, nil
+	err = json.NewDecoder(res.Body).Decode(user)
+	if err != nil {
+		return nil, err
+	}
+
+	return user, nil
 }
 
-func AuthHandler() func(ssh.Context, ssh.PublicKey) bool {
+func AuthHandler(authToken string) func(ssh.Context, ssh.PublicKey) bool {
 	return func(ctx ssh.Context, key ssh.PublicKey) bool {
 		kb := base64.StdEncoding.EncodeToString(key.Marshal())
 		if kb == "" {
@@ -105,31 +130,43 @@ func AuthHandler() func(ssh.Context, ssh.PublicKey) bool {
 		}
 		kk := fmt.Sprintf("%s %s", key.Type(), kb)
 
-		success, err := checkAuthenticationKeyRequest(
+		user, err := checkAuthenticationKeyRequest(
 			"https://auth.pico.sh/key?space=registry",
+			authToken,
 			kk,
-			ctx.RemoteAddr(),
 			ctx.User(),
+			ctx.RemoteAddr(),
 		)
 		if err != nil {
 			log.Println(err)
 		}
-		return success
+
+		if user != nil {
+			setUserCtx(ctx, user)
+			return true
+		}
+
+		return false
 	}
+}
+
+type ErrorHandler struct {
+	Err error
+}
+
+func (e *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	log.Println(e.Err.Error())
+	http.Error(w, e.Err.Error(), http.StatusInternalServerError)
 }
 
 func serveMux(ctx ssh.Context) http.Handler {
 	router := http.NewServeMux()
 
-	slug := ""
-
-	key := ctx.Value(ssh.ContextKeyPublicKey)
-	if key != nil {
-		sshKey := key.(ssh.PublicKey)
-		h := sha256.New()
-		h.Write(sshKey.Marshal())
-		slug = hex.EncodeToString(h.Sum(nil))
+	user, err := getUserCtx(ctx)
+	if err != nil || user.Name == "" {
+		return &ErrorHandler{Err: err}
 	}
+	slug := user.Name
 
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "http",
@@ -178,11 +215,12 @@ func main() {
 	if port == "" {
 		port = "2222"
 	}
+	authToken := os.Getenv("AUTH_TOKEN")
 
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
-		wish.WithPublicKeyAuth(AuthHandler()),
+		wish.WithPublicKeyAuth(AuthHandler(authToken)),
 		ptun.WithWebTunnel(serveMux),
 	)
 

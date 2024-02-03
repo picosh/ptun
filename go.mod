@@ -7,6 +7,7 @@ require golang.org/x/crypto v0.18.0
 require (
 	github.com/charmbracelet/ssh v0.0.0-20240130183930-33d2a30e8568
 	github.com/charmbracelet/wish v1.3.0
+	github.com/picosh/pico v1.11.1
 )
 
 require (
