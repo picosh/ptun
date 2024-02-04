@@ -70,8 +70,8 @@ func (ctx fakeContext) Deadline() (time.Time, bool) {
 type ctxUserKey struct{}
 
 func getUserCtx(ctx ssh.Context) (*db.User, error) {
-	user := ctx.Value(ctxUserKey{}).(*db.User)
-	if user == nil {
+	user, ok := ctx.Value(ctxUserKey{}).(*db.User)
+	if user == nil || !ok {
 		return user, fmt.Errorf("user not set on `ssh.Context()` for connection")
 	}
 	return user, nil
@@ -162,11 +162,11 @@ func (e *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func serveMux(ctx ssh.Context) http.Handler {
 	router := http.NewServeMux()
 
+	slug := ""
 	user, err := getUserCtx(ctx)
-	if err != nil || user.Name == "" {
-		return &ErrorHandler{Err: err}
+	if err == nil && user != nil {
+		slug = user.Name
 	}
-	slug := user.Name
 
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "http",

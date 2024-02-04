@@ -6,9 +6,13 @@ lint:
 	golangci-lint run -E goimports -E godot --timeout 10m
 .PHONY: lint
 
-build:
+build-example:
 	go build -o ./build/example ./cmd/example
 .PHONY: build
+
+build-docker:
+	go build -o ./build/docker ./cmd/docker
+.PHONY: build-docker
 
 tunnel:
 	ssh -L 8081:localhost:3000 \
