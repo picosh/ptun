@@ -114,7 +114,7 @@ func checkAuthenticationKeyRequest(authUrl, authToken, authKey, username string,
 		return nil, nil
 	}
 
-	err = json.NewDecoder(res.Body).Decode(user)
+	err = json.NewDecoder(res.Body).Decode(&user)
 	if err != nil {
 		return nil, err
 	}
@@ -139,6 +139,7 @@ func AuthHandler(authToken string) func(ssh.Context, ssh.PublicKey) bool {
 		)
 		if err != nil {
 			log.Println(err)
+			return false
 		}
 
 		if user != nil {

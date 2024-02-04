@@ -19,5 +19,17 @@ tunnel:
 		-p 2222 \
 		-o UserKnownHostsFile=/dev/null \
 		-o StrictHostKeyChecking=no \
-		-N localhost
+		-N \
+		localhost
+.PHONY: tunnel
+
+tunnel-prod:
+	ssh -L 8081:imgs.sh:8080 \
+		-o UserKnownHostsFile=/dev/null \
+		-o StrictHostKeyChecking=no \
+		-N \
+		imgs.sh
+	# docker pull ubuntu
+	# docker tag ubuntu localhost:5000/ubuntu
+	# docker push localhost:5000/ubuntu
 .PHONY: tunnel
