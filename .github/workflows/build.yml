@@ -8,6 +8,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Check out the repo
+      uses: actions/checkout@v5
     - name: Set up QEMU
       uses: docker/setup-qemu-action@v3
     - name: Set up Docker Buildx
@@ -15,14 +17,12 @@ jobs:
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
-        context: .
         file: ./Dockerfile
         push: true
         tags: ghcr.io/ptun:latest
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
-        context: .
         file: ./Dockerfile.autossh
         push: true
         tags: ghcr.io/ptun-autossh:latest
