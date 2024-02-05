@@ -19,6 +19,42 @@ access.
 For example, have you ever wished you could use `docker push` and `docker pull`
 using just an SSH keypair? Well now it's possible.
 
+# Using with Github Action
+
+```yml
+name: build and push docker image
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # start ssh tunnel as a container service
+    services:
+      registry:
+        image: neurosnap/ptun:latest
+        env:
+          USERNAME: <pico_user>
+          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+        ports:
+          - 5000:5000
+    steps:
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        # so we can interact with registry container service
+        driver-opts: network=host
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        push: true
+        tags: localhost:5000/image:latest
+```
+
 # Development
 
 ```bash
