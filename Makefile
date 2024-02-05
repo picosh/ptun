@@ -15,7 +15,7 @@ build-docker:
 .PHONY: build-docker
 
 tunnel:
-	ssh -L 0.0.0.0:8443:localhost:8080 \
+	ssh -L 0.0.0.0:8443:localhost:80 \
 		-p 2222 \
 		-o UserKnownHostsFile=/dev/null \
 		-o StrictHostKeyChecking=no \
