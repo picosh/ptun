@@ -1,6 +1,6 @@
-# Web Tunnels
+# ptun - web tunnels
 
-A passwordless authentication experience for the browser leveraging SSH tunnels.
+Passwordless authentication for the browser using SSH tunnels.
 
 # How it works
 
@@ -21,6 +21,9 @@ using just an SSH keypair? Well now it's possible.
 
 # Using with Github Action
 
+Need registry access to CI/CD?  Use our container service to open a "local"
+registry.
+
 ```yml
 name: build and push docker image
 
@@ -34,7 +37,7 @@ jobs:
     # start ssh tunnel as a container service
     services:
       registry:
-        image: neurosnap/ptun:latest
+        image: ghcr.io/picosh/ptun/autossh:latest
         env:
           USERNAME: <pico_user>
           PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
@@ -46,7 +49,6 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
       with:
-        # so we can interact with registry container service
         driver-opts: network=host
     - name: Build and push
       uses: docker/build-push-action@v5

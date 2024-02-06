@@ -25,10 +25,10 @@ jobs:
       with:
         file: ./Dockerfile
         push: true
-        tags: ghcr.io/picosh/ptun/ptun:latest
+        tags: ghcr.io/picosh/ptun/imgs:latest
     - name: Build and push
       uses: docker/build-push-action@v5
       with:
         file: ./Dockerfile.autossh
         push: true
-        tags: ghcr.io/picosh/ptun/ptun-autossh:latest
+        tags: ghcr.io/picosh/ptun/autossh:latest
