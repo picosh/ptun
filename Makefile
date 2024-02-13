@@ -15,7 +15,7 @@ build-docker:
 .PHONY: build-docker
 
 tunnel:
-	ssh -L 0.0.0.0:8443:localhost:80 \
+	ssh -L 0.0.0.0:5000:localhost:80 \
 		-p 2222 \
 		-o UserKnownHostsFile=/dev/null \
 		-o StrictHostKeyChecking=no \
@@ -24,7 +24,7 @@ tunnel:
 .PHONY: tunnel
 
 tunnel-prod:
-	ssh -L 0.0.0.0:8443:localhost:80 -N imgs.sh
+	ssh -L 0.0.0.0:5000:localhost:80 -N imgs.sh
 	# docker pull ubuntu
 	# docker tag ubuntu localhost:5000/ubuntu
 	# docker push localhost:5000/ubuntu
