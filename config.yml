@@ -1,4 +1,6 @@
 version: 0.1
+http:
+  addr: localhost:5000
 storage:
   s3:
     region: us-east-1
