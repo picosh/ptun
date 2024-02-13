@@ -6,3 +6,5 @@ storage:
     region: us-east-1
     bucket: imgs
     regionendpoint: https://minio.pico.sh
+  redirect:
+    disable: true
