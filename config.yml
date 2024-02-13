@@ -1,0 +1,6 @@
+version: 0.1
+storage:
+  s3:
+    region: us-east-1
+    bucket: imgs
+    encrypt: true
