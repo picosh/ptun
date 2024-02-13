@@ -3,4 +3,5 @@ storage:
   s3:
     region: us-east-1
     bucket: imgs
+    regionendpoint: https://minio.pico.sh
     encrypt: true
