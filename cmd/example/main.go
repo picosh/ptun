@@ -19,8 +19,8 @@ func authHandler(ctx ssh.Context, key ssh.PublicKey) bool {
 	return true
 }
 
-func serveMux(sesh ssh.Session) http.Handler {
-	clientName := sesh.Context().User()
+func serveMux(ctx ssh.Context) http.Handler {
+	clientName := ctx.User()
 	router := http.NewServeMux()
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -41,13 +41,14 @@ func main() {
 		port = "2222"
 	}
 
+	handler := &ptun.WebTunnelHandler{
+		HttpHandler: serveMux,
+	}
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
 		wish.WithPublicKeyAuth(authHandler),
-		ptun.WithWebTunnel(&ptun.WebTunnelHandler{
-			HttpHandler: serveMux,
-		}),
+		ptun.WithWebTunnel(handler),
 	)
 
 	if err != nil {

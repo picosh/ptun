@@ -30,7 +30,7 @@ func (wt *WebTunnelHandler) GetHttpHandler() HttpHandlerFn {
 	return wt.HttpHandler
 }
 
-func (wt *WebTunnelHandler) CreateListener(sesh ssh.Session) (net.Listener, error) {
+func (wt *WebTunnelHandler) CreateListener(ctx ssh.Context) (net.Listener, error) {
 	tempFile, err := os.CreateTemp("", "")
 	if err != nil {
 		log.Println("Unable to create tempfile:", err)
@@ -38,15 +38,16 @@ func (wt *WebTunnelHandler) CreateListener(sesh ssh.Session) (net.Listener, erro
 	}
 
 	tempFile.Close()
-	tempFileName := tempFile.Name()
-	setAddressCtx(sesh.Context(), tempFileName)
-	os.Remove(tempFileName)
+	address := tempFile.Name()
+	os.Remove(address)
 
-	connListener, err := net.Listen("unix", tempFileName)
+	connListener, err := net.Listen("unix", address)
 	if err != nil {
 		log.Println("Unable to listen to unix socket:", err)
 		return nil, err
 	}
+	setAddressCtx(ctx, address)
+	setListenerCtx(ctx, connListener)
 
 	return connListener, nil
 }
@@ -56,5 +57,6 @@ func (wt *WebTunnelHandler) CreateConn(ctx ssh.Context) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return net.Dial("unix", address)
 }

@@ -20,11 +20,11 @@ type forwardedTCPPayload struct {
 }
 
 type LocalForwardFn = func(*ssh.Server, *gossh.ServerConn, gossh.NewChannel, ssh.Context)
-type HttpHandlerFn = func(sesh ssh.Session) http.Handler
+type HttpHandlerFn = func(ctx ssh.Context) http.Handler
 
 type WebTunnel interface {
 	GetHttpHandler() HttpHandlerFn
-	CreateListener(sesh ssh.Session) (net.Listener, error)
+	CreateListener(ctx ssh.Context) (net.Listener, error)
 	CreateConn(ctx ssh.Context) (net.Conn, error)
 }
 
@@ -40,34 +40,44 @@ func WithWebTunnel(handler WebTunnel) ssh.Option {
 			serv.ChannelHandlers = map[string]ssh.ChannelHandler{}
 		}
 		serv.ChannelHandlers["direct-tcpip"] = localForwardHandler(handler)
-		serv.Handler = sshHandler(handler)
 		return nil
 	}
 }
 
-func sshHandler(handler WebTunnel) ssh.Handler {
-	return func(sesh ssh.Session) {
-		listener, err := handler.CreateListener(sesh)
-		if err != nil {
-			ErrorHandler(sesh, err)
-			return
-		}
+type ctxListenerKey struct{}
 
-		defer func() {
-			if r := recover(); r != nil {
-				_, _ = sesh.Stderr().Write([]byte("error running middleware\r\n"))
-			}
-			listener.Close()
-		}()
-
-		go func() {
-			httpHandler := handler.GetHttpHandler()
-			err := http.Serve(listener, httpHandler(sesh))
-			if err != nil {
-				log.Println("Unable to serve http content:", err)
-			}
-		}()
+func getListenerCtx(ctx ssh.Context) (net.Listener, error) {
+	listener, ok := ctx.Value(ctxListenerKey{}).(net.Listener)
+	if listener == nil || !ok {
+		return nil, fmt.Errorf("listener not set on `ssh.Context()` for connection")
 	}
+	return listener, nil
+}
+func setListenerCtx(ctx ssh.Context, listener net.Listener) {
+	ctx.SetValue(ctxListenerKey{}, listener)
+}
+
+func httpServe(handler WebTunnel, ctx ssh.Context) (net.Listener, error) {
+	cached, _ := getListenerCtx(ctx)
+	if cached != nil {
+		return cached, nil
+	}
+
+	listener, err := handler.CreateListener(ctx)
+	if err != nil {
+		return nil, err
+	}
+	setListenerCtx(ctx, listener)
+
+	go func() {
+		httpHandler := handler.GetHttpHandler()
+		err := http.Serve(listener, httpHandler(ctx))
+		if err != nil {
+			log.Println("Unable to serve http content:", err)
+		}
+	}()
+
+	return listener, nil
 }
 
 func localForwardHandler(handler WebTunnel) LocalForwardFn {
@@ -83,6 +93,13 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 			log.Println("Error unmarshaling information:", err)
 			return
 		}
+
+		listener, err := httpServe(handler, ctx)
+		if err != nil {
+			log.Println("Unable to create listener:", err)
+			return
+		}
+		defer listener.Close()
 
 		log.Printf("%+v", check)
 

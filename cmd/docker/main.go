@@ -123,11 +123,11 @@ func (e *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, e.Err.Error(), http.StatusInternalServerError)
 }
 
-func serveMux(sesh ssh.Session) http.Handler {
+func serveMux(ctx ssh.Context) http.Handler {
 	router := http.NewServeMux()
 
 	slug := ""
-	user, err := getUserCtx(sesh.Context())
+	user, err := getUserCtx(ctx)
 	if err == nil && user != nil {
 		slug = user.Name
 	}
