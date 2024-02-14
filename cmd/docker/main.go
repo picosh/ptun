@@ -16,7 +16,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -25,49 +24,6 @@ import (
 	"github.com/picosh/pico/db"
 	"github.com/picosh/ptun"
 )
-
-type fakeContext struct {
-	context.Context
-	sync.Locker
-}
-
-func (ctx fakeContext) Value(key interface{}) interface{} {
-	return nil
-}
-
-func (ctx fakeContext) SetValue(key, value interface{}) {}
-
-func (ctx fakeContext) User() string {
-	return ""
-}
-
-func (ctx fakeContext) SessionID() string {
-	return ""
-}
-
-func (ctx fakeContext) ClientVersion() string {
-	return ""
-}
-
-func (ctx fakeContext) ServerVersion() string {
-	return ""
-}
-
-func (ctx fakeContext) RemoteAddr() net.Addr {
-	return nil
-}
-
-func (ctx fakeContext) LocalAddr() net.Addr {
-	return nil
-}
-
-func (ctx fakeContext) Permissions() *ssh.Permissions {
-	return nil
-}
-
-func (ctx fakeContext) Deadline() (time.Time, bool) {
-	return time.Time{}, false
-}
 
 type ctxUserKey struct{}
 
@@ -167,11 +123,11 @@ func (e *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, e.Err.Error(), http.StatusInternalServerError)
 }
 
-func serveMux(ctx ssh.Context) http.Handler {
+func serveMux(sesh ssh.Session) http.Handler {
 	router := http.NewServeMux()
 
 	slug := ""
-	user, err := getUserCtx(ctx)
+	user, err := getUserCtx(sesh.Context())
 	if err == nil && user != nil {
 		slug = user.Name
 	}
@@ -330,7 +286,9 @@ func main() {
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
 		wish.WithPublicKeyAuth(AuthHandler(authToken)),
-		ptun.WithWebTunnel(serveMux),
+		ptun.WithWebTunnel(&ptun.WebTunnelHandler{
+			HttpHandler: serveMux,
+		}),
 	)
 
 	if err != nil {
@@ -342,14 +300,6 @@ func main() {
 	log.Printf("Starting SSH server on %s:%s", host, port)
 	go func() {
 		if err = s.ListenAndServe(); err != nil {
-			log.Fatal(err)
-		}
-	}()
-
-	go func() {
-		fakeCtx := fakeContext{}
-
-		if err := http.ListenAndServe(":8080", serveMux(fakeCtx)); err != nil {
 			log.Fatal(err)
 		}
 	}()

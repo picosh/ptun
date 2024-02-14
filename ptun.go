@@ -1,11 +1,11 @@
 package ptun
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/charmbracelet/ssh"
@@ -19,42 +19,59 @@ type forwardedTCPPayload struct {
 	OriginPort uint32
 }
 
-type Handler = func(ctx ssh.Context) http.Handler
+type LocalForwardFn = func(*ssh.Server, *gossh.ServerConn, gossh.NewChannel, ssh.Context)
+type HttpHandlerFn = func(sesh ssh.Session) http.Handler
 
-func WithWebTunnel(handler Handler) ssh.Option {
-	return func(s *ssh.Server) error {
-		if s.ChannelHandlers == nil {
-			s.ChannelHandlers = map[string]ssh.ChannelHandler{}
+type WebTunnel interface {
+	GetHttpHandler() HttpHandlerFn
+	CreateListener(sesh ssh.Session) (net.Listener, error)
+	CreateConn(ctx ssh.Context) (net.Conn, error)
+}
+
+func ErrorHandler(sesh ssh.Session, err error) {
+	_, _ = fmt.Fprint(sesh.Stderr(), err, "\r\n")
+	_ = sesh.Exit(1)
+	_ = sesh.Close()
+}
+
+func WithWebTunnel(handler WebTunnel) ssh.Option {
+	return func(serv *ssh.Server) error {
+		if serv.ChannelHandlers == nil {
+			serv.ChannelHandlers = map[string]ssh.ChannelHandler{}
 		}
-		s.ChannelHandlers["direct-tcpip"] = CreateDirectTcpIpHandler(handler)
+		serv.ChannelHandlers["direct-tcpip"] = localForwardHandler(handler)
+		serv.Handler = sshHandler(handler)
 		return nil
 	}
 }
 
-func CreateDirectTcpIpHandler(handler Handler) func(*ssh.Server, *gossh.ServerConn, gossh.NewChannel, ssh.Context) {
-	return func(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {
-		tempFile, err := os.CreateTemp("", "")
+func sshHandler(handler WebTunnel) ssh.Handler {
+	return func(sesh ssh.Session) {
+		listener, err := handler.CreateListener(sesh)
 		if err != nil {
-			log.Println("Unable to create tempfile:", err)
+			ErrorHandler(sesh, err)
 			return
 		}
 
-		tempFile.Close()
-		os.Remove(tempFile.Name())
-
-		connListener, err := net.Listen("unix", tempFile.Name())
-		if err != nil {
-			log.Println("Unable to listen to unix socket:", err)
-			return
-		}
+		defer func() {
+			if r := recover(); r != nil {
+				_, _ = sesh.Stderr().Write([]byte("error running middleware\r\n"))
+			}
+			listener.Close()
+		}()
 
 		go func() {
-			if err := http.Serve(connListener, handler(ctx)); err != nil {
+			httpHandler := handler.GetHttpHandler()
+			err := http.Serve(listener, httpHandler(sesh))
+			if err != nil {
 				log.Println("Unable to serve http content:", err)
 			}
 		}()
+	}
+}
 
-		defer connListener.Close()
+func localForwardHandler(handler WebTunnel) LocalForwardFn {
+	return func(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {
 		ch, reqs, err := newChan.Accept()
 		if err != nil {
 			// TODO: trigger event callback
@@ -72,7 +89,7 @@ func CreateDirectTcpIpHandler(handler Handler) func(*ssh.Server, *gossh.ServerCo
 		go gossh.DiscardRequests(reqs)
 
 		go func() {
-			downConn, err := net.Dial("unix", tempFile.Name())
+			downConn, err := handler.CreateConn(ctx)
 			if err != nil {
 				log.Println("Unable to connect to unix socket:", err)
 				return
