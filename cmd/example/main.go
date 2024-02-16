@@ -41,11 +41,14 @@ func main() {
 		port = "2222"
 	}
 
+	handler := &ptun.WebTunnelHandler{
+		HttpHandler: serveMux,
+	}
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
 		wish.WithPublicKeyAuth(authHandler),
-		ptun.WithWebTunnel(serveMux),
+		ptun.WithWebTunnel(handler),
 	)
 
 	if err != nil {
