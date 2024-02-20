@@ -37,7 +37,9 @@ func ErrorHandler(sesh ssh.Session, err error) {
 func WithWebTunnel(handler WebTunnel) ssh.Option {
 	return func(serv *ssh.Server) error {
 		if serv.ChannelHandlers == nil {
-			serv.ChannelHandlers = map[string]ssh.ChannelHandler{}
+			serv.ChannelHandlers = map[string]ssh.ChannelHandler{
+				"session": ssh.DefaultSessionHandler,
+			}
 		}
 		serv.ChannelHandlers["direct-tcpip"] = localForwardHandler(handler)
 		return nil
