@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"sync"
@@ -26,6 +27,7 @@ type WebTunnel interface {
 	GetHttpHandler() HttpHandlerFn
 	CreateListener(ctx ssh.Context) (net.Listener, error)
 	CreateConn(ctx ssh.Context) (net.Conn, error)
+	GetLogger() *slog.Logger
 }
 
 func ErrorHandler(sesh ssh.Session, err error) {
@@ -87,22 +89,35 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 		check := &forwardedTCPPayload{}
 		err := gossh.Unmarshal(newChan.ExtraData(), check)
 		if err != nil {
-			log.Println("Error unmarshaling information:", err)
+			handler.GetLogger().Error(
+				"error unmarshaling information",
+				"err", err,
+			)
 			return
 		}
-		log.Printf("%+v", check)
+
+		log := handler.GetLogger().With(
+			"addr", check.Addr,
+			"port", check.Port,
+			"origAddr", check.OriginAddr,
+			"origPort", check.OriginPort,
+		)
+		log.Info("local forward request")
 
 		ch, reqs, err := newChan.Accept()
 		if err != nil {
-			// TODO: trigger event callback
+			log.Error("cannot accept new channel", "err", err)
 			return
 		}
 		go gossh.DiscardRequests(reqs)
 
 		listener, err := httpServe(handler, ctx)
 		if err != nil {
-			log.Println("Unable to create listener:", err)
-			newChan.Reject(gossh.ConnectionFailed, err.Error())
+			log.Info("unable to create listener", "err", err)
+			err := newChan.Reject(gossh.ConnectionFailed, err.Error())
+			if err != nil {
+				log.Error("failed to reject new chan", "err", err)
+			}
 			return
 		}
 		defer listener.Close()
@@ -110,8 +125,11 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 		go func() {
 			downConn, err := handler.CreateConn(ctx)
 			if err != nil {
-				log.Println("Unable to connect to unix socket:", err)
-				newChan.Reject(gossh.ConnectionFailed, err.Error())
+				log.Error("unable to connect to unix socket", "err", err)
+				err := newChan.Reject(gossh.ConnectionFailed, err.Error())
+				if err != nil {
+					log.Error("failed to reject new chan", "err", err)
+				}
 				return
 			}
 			defer downConn.Close()
@@ -123,18 +141,27 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 				defer wg.Done()
 				defer ch.Close()
 				defer downConn.Close()
-				io.Copy(ch, downConn)
+				_, err := io.Copy(ch, downConn)
+				if err != nil {
+					log.Error("io copy", "err", err)
+				}
 			}()
 			go func() {
 				defer wg.Done()
 				defer ch.Close()
 				defer downConn.Close()
-				io.Copy(downConn, ch)
+				_, err := io.Copy(downConn, ch)
+				if err != nil {
+					log.Error("io copy", "err", err)
+				}
 			}()
 
 			wg.Wait()
 		}()
 
-		conn.Wait()
+		err = conn.Wait()
+		if err != nil {
+			log.Error("conn wait error", "err", err)
+		}
 	}
 }

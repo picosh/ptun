@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,13 +24,15 @@ func serveMux(ctx ssh.Context) http.Handler {
 	router := http.NewServeMux()
 
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(fmt.Sprintf("Hello %s!", clientName)))
+		_, err := w.Write([]byte(fmt.Sprintf("Hello %s!", clientName)))
+		if err != nil {
+			fmt.Println(err)
+		}
 	})
 
 	return router
 }
 
-// ssh -L 8081:localhost:3000 -p 2222 -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -N localhost
 func main() {
 	host := os.Getenv("SSH_HOST")
 	if host == "" {
@@ -41,34 +43,34 @@ func main() {
 		port = "2222"
 	}
 
-	handler := &ptun.WebTunnelHandler{
-		HttpHandler: serveMux,
-	}
+	logger := slog.Default()
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
 		wish.WithPublicKeyAuth(authHandler),
-		ptun.WithWebTunnel(handler),
+		ptun.WithWebTunnel(ptun.NewWebTunnelHandler(serveMux, logger)),
 	)
 
 	if err != nil {
-		log.Fatal(err)
+		logger.Error("could not create server", "err", err)
 	}
 
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	log.Printf("Starting SSH server on %s:%s", host, port)
+	logger.Info("starting SSH server", "host", host, "port", port)
 	go func() {
 		if err = s.ListenAndServe(); err != nil {
-			log.Fatal(err)
+			logger.Error("serve error", "err", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-done
-	log.Println("Stopping SSH server")
+	logger.Info("stopping SSH server")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer func() { cancel() }()
 	if err := s.Shutdown(ctx); err != nil {
-		log.Fatal(err)
+		logger.Error("shutdown", "err", err)
+		os.Exit(1)
 	}
 }

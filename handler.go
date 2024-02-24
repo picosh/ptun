@@ -3,6 +3,7 @@ package ptun
 import (
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 
@@ -24,6 +25,18 @@ func setAddressCtx(ctx ssh.Context, address string) {
 
 type WebTunnelHandler struct {
 	HttpHandler HttpHandlerFn
+	Logger      *slog.Logger
+}
+
+func NewWebTunnelHandler(handler HttpHandlerFn, logger *slog.Logger) *WebTunnelHandler {
+	return &WebTunnelHandler{
+		HttpHandler: handler,
+		Logger:      logger,
+	}
+}
+
+func (wt *WebTunnelHandler) GetLogger() *slog.Logger {
+	return wt.Logger
 }
 
 func (wt *WebTunnelHandler) GetHttpHandler() HttpHandlerFn {
