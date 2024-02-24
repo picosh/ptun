@@ -84,36 +84,36 @@ func httpServe(handler WebTunnel, ctx ssh.Context) (net.Listener, error) {
 
 func localForwardHandler(handler WebTunnel) LocalForwardFn {
 	return func(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {
+		check := &forwardedTCPPayload{}
+		err := gossh.Unmarshal(newChan.ExtraData(), check)
+		if err != nil {
+			log.Println("Error unmarshaling information:", err)
+			return
+		}
+		log.Printf("%+v", check)
+
 		ch, reqs, err := newChan.Accept()
 		if err != nil {
 			// TODO: trigger event callback
 			return
 		}
-		check := &forwardedTCPPayload{}
-		err = gossh.Unmarshal(newChan.ExtraData(), check)
-		if err != nil {
-			log.Println("Error unmarshaling information:", err)
-			return
-		}
+		go gossh.DiscardRequests(reqs)
 
 		listener, err := httpServe(handler, ctx)
 		if err != nil {
 			log.Println("Unable to create listener:", err)
+			newChan.Reject(gossh.ConnectionFailed, err.Error())
 			return
 		}
 		defer listener.Close()
-
-		log.Printf("%+v", check)
-
-		go gossh.DiscardRequests(reqs)
 
 		go func() {
 			downConn, err := handler.CreateConn(ctx)
 			if err != nil {
 				log.Println("Unable to connect to unix socket:", err)
+				newChan.Reject(gossh.ConnectionFailed, err.Error())
 				return
 			}
-
 			defer downConn.Close()
 
 			var wg sync.WaitGroup
@@ -121,13 +121,15 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 
 			go func() {
 				defer wg.Done()
+				defer ch.Close()
+				defer downConn.Close()
 				io.Copy(ch, downConn)
-				ch.CloseWrite()
 			}()
 			go func() {
 				defer wg.Done()
+				defer ch.Close()
+				defer downConn.Close()
 				io.Copy(downConn, ch)
-				downConn.Close()
 			}()
 
 			wg.Wait()
