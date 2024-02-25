@@ -2,7 +2,6 @@ package ptun
 
 import (
 	"fmt"
-	"log"
 	"log/slog"
 	"net"
 	"os"
@@ -46,7 +45,6 @@ func (wt *WebTunnelHandler) GetHttpHandler() HttpHandlerFn {
 func (wt *WebTunnelHandler) CreateListener(ctx ssh.Context) (net.Listener, error) {
 	tempFile, err := os.CreateTemp("", "")
 	if err != nil {
-		log.Println("Unable to create tempfile:", err)
 		return nil, err
 	}
 
@@ -56,7 +54,6 @@ func (wt *WebTunnelHandler) CreateListener(ctx ssh.Context) (net.Listener, error
 
 	connListener, err := net.Listen("unix", address)
 	if err != nil {
-		log.Println("Unable to listen to unix socket:", err)
 		return nil, err
 	}
 	setAddressCtx(ctx, address)

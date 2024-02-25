@@ -3,7 +3,6 @@ package ptun
 import (
 	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -28,12 +27,6 @@ type WebTunnel interface {
 	CreateListener(ctx ssh.Context) (net.Listener, error)
 	CreateConn(ctx ssh.Context) (net.Conn, error)
 	GetLogger() *slog.Logger
-}
-
-func ErrorHandler(sesh ssh.Session, err error) {
-	_, _ = fmt.Fprint(sesh.Stderr(), err, "\r\n")
-	_ = sesh.Exit(1)
-	_ = sesh.Close()
 }
 
 func WithWebTunnel(handler WebTunnel) ssh.Option {
@@ -61,7 +54,7 @@ func setListenerCtx(ctx ssh.Context, listener net.Listener) {
 	ctx.SetValue(ctxListenerKey{}, listener)
 }
 
-func httpServe(handler WebTunnel, ctx ssh.Context) (net.Listener, error) {
+func httpServe(handler WebTunnel, ctx ssh.Context, log *slog.Logger) (net.Listener, error) {
 	cached, _ := getListenerCtx(ctx)
 	if cached != nil {
 		return cached, nil
@@ -77,7 +70,7 @@ func httpServe(handler WebTunnel, ctx ssh.Context) (net.Listener, error) {
 		httpHandler := handler.GetHttpHandler()
 		err := http.Serve(listener, httpHandler(ctx))
 		if err != nil {
-			log.Println("Unable to serve http content:", err)
+			log.Error("unable to serve http content", "err", err)
 		}
 	}()
 
@@ -88,15 +81,16 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 	return func(srv *ssh.Server, conn *gossh.ServerConn, newChan gossh.NewChannel, ctx ssh.Context) {
 		check := &forwardedTCPPayload{}
 		err := gossh.Unmarshal(newChan.ExtraData(), check)
+		logger := handler.GetLogger()
 		if err != nil {
-			handler.GetLogger().Error(
+			logger.Error(
 				"error unmarshaling information",
 				"err", err,
 			)
 			return
 		}
 
-		log := handler.GetLogger().With(
+		log := logger.With(
 			"addr", check.Addr,
 			"port", check.Port,
 			"origAddr", check.OriginAddr,
@@ -111,13 +105,9 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 		}
 		go gossh.DiscardRequests(reqs)
 
-		listener, err := httpServe(handler, ctx)
+		listener, err := httpServe(handler, ctx, log)
 		if err != nil {
 			log.Info("unable to create listener", "err", err)
-			err := newChan.Reject(gossh.ConnectionFailed, err.Error())
-			if err != nil {
-				log.Error("failed to reject new chan", "err", err)
-			}
 			return
 		}
 		defer listener.Close()
@@ -126,10 +116,6 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 			downConn, err := handler.CreateConn(ctx)
 			if err != nil {
 				log.Error("unable to connect to unix socket", "err", err)
-				err := newChan.Reject(gossh.ConnectionFailed, err.Error())
-				if err != nil {
-					log.Error("failed to reject new chan", "err", err)
-				}
 				return
 			}
 			defer downConn.Close()
