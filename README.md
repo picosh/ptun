@@ -2,6 +2,18 @@
 
 Passwordless authentication for the browser using SSH tunnels.
 
+# Demo
+
+We use this library to support private sites through [pgs.sh](https://pgs.sh).
+
+Open a tunnel to pgs:
+
+```bash
+ssh -L 5000:localhost:80 -N hey-tunnels@pgs.sh
+```
+
+Then go to http://localhost:5000
+
 # How it works
 
 The end-user creates a local forward SSH tunnel to a service running `ptun`.
@@ -19,43 +31,8 @@ access.
 For example, have you ever wished you could use `docker push` and `docker pull`
 using just an SSH keypair? Well now it's possible.
 
-# Using with Github Action
-
-Need registry access to CI/CD?  Use our container service to open a "local"
-registry.
-
-```yml
-name: build and push docker image
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    # start ssh tunnel as a container service
-    services:
-      registry:
-        image: ghcr.io/picosh/ptun/autossh:latest
-        env:
-          USERNAME: <pico_user>
-          PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
-        ports:
-          - 5000:5000
-    steps:
-    - name: Set up QEMU
-      uses: docker/setup-qemu-action@v3
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      with:
-        driver-opts: network=host
-    - name: Build and push
-      uses: docker/build-push-action@v5
-      with:
-        push: true
-        tags: localhost:5000/image:latest
-```
+We built this library to support [imgs.sh](https://pico.sh/imgs): a private
+docker registry leveraging SSH tunnels.
 
 # Development
 
