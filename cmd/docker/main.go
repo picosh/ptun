@@ -3,13 +3,11 @@ package main
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -22,98 +20,8 @@ import (
 
 	"github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
-	"github.com/picosh/pico/db"
 	"github.com/picosh/ptun"
 )
-
-type ctxUserKey struct{}
-
-func getUserCtx(ctx ssh.Context) (*db.User, error) {
-	user, ok := ctx.Value(ctxUserKey{}).(*db.User)
-	if user == nil || !ok {
-		return user, fmt.Errorf("user not set on `ssh.Context()` for connection")
-	}
-	return user, nil
-}
-func setUserCtx(ctx ssh.Context, user *db.User) {
-	ctx.SetValue(ctxUserKey{}, user)
-}
-
-func checkAuthenticationKeyRequest(authUrl, authToken, authKey, username string, addr net.Addr) (*db.User, error) {
-	var user *db.User
-	parsedUrl, err := url.ParseRequestURI(authUrl)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing url %s", err)
-	}
-
-	urlS := parsedUrl.String()
-	reqBodyMap := map[string]string{
-		"auth_key":    string(authKey),
-		"remote_addr": addr.String(),
-		"user":        username,
-	}
-	reqBody, err := json.Marshal(reqBodyMap)
-	if err != nil {
-		return nil, fmt.Errorf("error jsonifying request body")
-	}
-	req, err := http.NewRequest("POST", urlS, bytes.NewBuffer(reqBody))
-	if err != nil {
-		log.Printf("Error creating auth service request: %s: %s", urlS, err.Error())
-		return nil, nil
-	}
-
-	req.Header.Add("Authorization", authToken)
-	req.Header.Add("Content-Type", "application/json")
-
-	client := &http.Client{}
-	res, err := client.Do(req)
-	if err != nil {
-		log.Printf("Error auth service: %s with status %d: %s", urlS, res.StatusCode, err.Error())
-		return nil, nil
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK {
-		log.Printf("Public key rejected by auth service: %s with status %d", urlS, res.StatusCode)
-		return nil, nil
-	}
-
-	err = json.NewDecoder(res.Body).Decode(&user)
-	if err != nil {
-		return nil, err
-	}
-
-	return user, nil
-}
-
-func AuthHandler(authToken string) func(ssh.Context, ssh.PublicKey) bool {
-	return func(ctx ssh.Context, key ssh.PublicKey) bool {
-		kb := base64.StdEncoding.EncodeToString(key.Marshal())
-		if kb == "" {
-			return false
-		}
-		kk := fmt.Sprintf("%s %s", key.Type(), kb)
-
-		user, err := checkAuthenticationKeyRequest(
-			"https://auth.pico.sh/key?space=registry",
-			authToken,
-			kk,
-			ctx.User(),
-			ctx.RemoteAddr(),
-		)
-		if err != nil {
-			log.Println(err)
-			return false
-		}
-
-		if user != nil {
-			setUserCtx(ctx, user)
-			return true
-		}
-
-		return false
-	}
-}
 
 type ErrorHandler struct {
 	Err error
@@ -126,12 +34,7 @@ func (e *ErrorHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func serveMux(ctx ssh.Context) http.Handler {
 	router := http.NewServeMux()
-
-	slug := ""
-	user, err := getUserCtx(ctx)
-	if err == nil && user != nil {
-		slug = user.Name
-	}
+	slug := ctx.User()
 
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{
 		Scheme: "http",
@@ -280,13 +183,16 @@ func main() {
 	if port == "" {
 		port = "2222"
 	}
-	authToken := os.Getenv("AUTH_TOKEN")
+	keyPath := os.Getenv("SSH_AUTHORIZED_KEYS")
+	if keyPath == "" {
+		keyPath = "ssh_data/authorized_keys"
+	}
 	logger := slog.Default()
 
 	s, err := wish.NewServer(
 		wish.WithAddress(fmt.Sprintf("%s:%s", host, port)),
 		wish.WithHostKeyPath("ssh_data/term_info_ed25519"),
-		wish.WithPublicKeyAuth(AuthHandler(authToken)),
+		wish.WithAuthorizedKeys(keyPath),
 		ptun.WithWebTunnel(ptun.NewWebTunnelHandler(serveMux, logger)),
 	)
 
