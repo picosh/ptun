@@ -1,6 +1,7 @@
 package ptun
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -125,11 +126,13 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 
 			go func() {
 				defer wg.Done()
-				defer ch.Close()
+				defer ch.CloseWrite()
 				defer downConn.Close()
 				_, err := io.Copy(ch, downConn)
 				if err != nil {
-					log.Error("io copy", "err", err)
+					if !errors.Is(err, net.ErrClosed) {
+						log.Error("io copy", "err", err)
+					}
 				}
 			}()
 			go func() {
@@ -138,7 +141,9 @@ func localForwardHandler(handler WebTunnel) LocalForwardFn {
 				defer downConn.Close()
 				_, err := io.Copy(downConn, ch)
 				if err != nil {
-					log.Error("io copy", "err", err)
+					if !errors.Is(err, net.ErrClosed) {
+						log.Error("io copy", "err", err)
+					}
 				}
 			}()
 
